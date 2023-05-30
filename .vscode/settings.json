@@ -1,0 +1,19 @@
+{
+    "cSpell.words": [
+        "bitburner",
+        "brutessh",
+        "ftpcrack",
+        "httpworm",
+        "Netscript",
+        "Pwnd",
+        "relaysmtp",
+        "serverbase",
+        "sqlinject",
+        "tprint"
+    ],
+    "bitburner.authToken": "EbrulhimrjwyyjssLQlu3KNOQUZNsTPPWX5Yt2PbqEJ+K/yXKoJKcZNXhpZhkHqa",
+    "bitburner.fileWatcher.enable": false,
+    "bitburner.scriptRoot": "./dist/",
+    "bitburner.showFileWatcherEnabledNotification": true,
+    "bitburner.showPushSuccessNotification": true
+}
