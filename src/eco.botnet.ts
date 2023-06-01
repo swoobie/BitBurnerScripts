@@ -3,9 +3,8 @@ import { ServerBase } from './lib.serverbase'
 
 export async function main(ns: NS) {
     ns.tprint(`Starting botnet eco.`);
-    const local = new ServerBase(ns, `home`);
     let servers = ns.scan(`home`).map(h => new ServerBase(ns, h)).filter(s => s.purchasedByPlayer);
-    let index: number = servers.length == 0 ? 0 : parseInt(servers.map(s => s.id.split('-')[1]).sort((a, b) => parseInt(b) - parseInt(a))[0]);
+    let index: number = parseInt(servers.map(s => s.id.split('-')[1]).sort((a, b) => parseInt(b) - parseInt(a))[0]);
     
     let startingServerRamPower = 4;
     let maxedOut = false;

@@ -1,21 +1,23 @@
-import {NS} from '../../NetscriptDefinitions';
+import {NS, Server} from '../../NetscriptDefinitions';
+import { Dispatcher } from './dispatcher';
+import { Logger } from 'log/logger';
 
 /**
  * Responsible for executing a batch of commands in a sequence on a target.
  * It creates the batch for the target and returns the batch to be analyzed or sent for dispatch.
  */
-export class Batcher {
+export class Batcher extends Logger {
     ns: NS;
 
     constructor(ns: NS) {
+        super(ns);
         this.ns = ns;
     }
 
     createPreparationBatch(target: string) {
-        this.ns.print(`INFO: Creating preparation batch for ${target}.`);
-        let metadata = this.createMetadata(target, false); 
+        this.log(`INFO: Creating preparation batch for ${target}.`);
 
-        let batch = new Batch(metadata);
+        let batch = new Batch(this.ns, target);
         batch.addCommand(CommandType.WEAKEN);
         batch.addCommand(CommandType.GROW);
         batch.addCommand(CommandType.WEAKEN);
@@ -23,89 +25,15 @@ export class Batcher {
     }
 
     createHackingBatch(target: string) {
-        this.ns.print(`INFO: Creating hacking batch for ${target}.`);
-        let metadata = this.createMetadata(target); 
+        this.log(`INFO: Creating hacking batch for ${target}.`);
 
-        let batch = new Batch(metadata);
+        let batch = new Batch(this.ns, target);
         batch.addCommand(CommandType.WEAKEN);
         batch.addCommand(CommandType.GROW);
         batch.addCommand(CommandType.WEAKEN);
         batch.addCommand(CommandType.HACK);
         return batch;
     }
-
-    private createMetadata(target: string, includeHacking: boolean = true) {
-        let gTime = this.ns.getGrowTime(target);
-        let growMultiplierNeeded = Math.max(
-            this.ns.getServerMaxMoney(target) / this.ns.getServerMoneyAvailable(target),
-            this.ns.getServerMaxMoney(target) / 2
-        );
-        let gThreads = this.ns.growthAnalyze(target, growMultiplierNeeded);
-        let gSecurityIncrease = this.ns.growthAnalyzeSecurity(gThreads, target);
-
-        let hTime = this.ns.getHackTime(target);
-        let hRequiredMoney = Math.floor(this.ns.getServerMaxMoney(target) / 2);
-        let hThreads = this.ns.hackAnalyzeThreads(target, hRequiredMoney);
-        if (hThreads < 0) hThreads = 1;
-        let hSecurityIncrease = this.ns.hackAnalyzeSecurity(hThreads, target);
-
-        let wTime = this.ns.getWeakenTime(target);
-        let weakenAmountPerThread = 0.05; // Same as this.ns.weakenAnalyze(1) but saves some ram
-        let wThreads = (this.ns.getServerSecurityLevel(target) + gSecurityIncrease) / weakenAmountPerThread;
-
-        // make sure our weaken delay is at least the length required to end exactly when growth ends
-        let maxTime = Math.max(wTime, gTime, hTime);
-        let minWeakenDelay = maxTime - wTime;
-        let minHackDelay = maxTime - hTime ;
-        let minGrowDelay = maxTime - gTime;
-
-        // if (this.ns.fileExists(`Formulas.exe`)) {
-        //     let targetServer = this.ns.getServer(target);
-        //     let player = this.ns.getPlayer();
-        // }
-
-
-        let metadata: BatchMetadata = {
-            target: target,
-            growthTime: gTime,
-            growMultiplierNeeded: growMultiplierNeeded,
-            growThreads: Math.ceil(gThreads),
-            gSecurityIncrease: gSecurityIncrease,
-            hackTime: includeHacking ? hTime : 0,
-            hackRequiredMoney: includeHacking ? hRequiredMoney : 0,
-            hackThreads: includeHacking ? Math.floor(hThreads) : 0,
-            hackSecurityIncrease: includeHacking ? hSecurityIncrease : 0,
-            weakenTime: wTime,
-            weakenAmountPerThread: weakenAmountPerThread, // Same as this.ns.weakenAnalyze(1) but saves some ram
-            weakenThreads:  Math.ceil(wThreads),
-            minWeakenDelay: minWeakenDelay,
-            minHackDelay: minHackDelay,
-            minGrowDelay: minGrowDelay
-        }
-        return metadata;
-    }
-
-}
-
-export interface BatchMetadata {
-    target: string;
-
-    growthTime: number;
-    growMultiplierNeeded: number;
-    growThreads: number;
-    gSecurityIncrease: number;
-
-    hackTime: number;
-    hackRequiredMoney: number;
-    hackThreads: number; 
-    hackSecurityIncrease:number;
-
-    weakenTime: number;
-    weakenAmountPerThread: number;
-    weakenThreads: number;
-    minWeakenDelay: number;
-    minHackDelay: number;
-    minGrowDelay: number;
 }
 
 /**
@@ -114,59 +42,129 @@ export interface BatchMetadata {
  * being queued multiple times.
  * The thread count and execution time is static for each command type though.
  */
-export class Batch {
+export class Batch extends Logger {
     private readonly commandBuffer: number = 200;
 
-    public metadata: BatchMetadata
+    public targetName: string
     public commands: Command[];
 
-    constructor(metadata: BatchMetadata)  {
-        this.metadata = metadata;
+    /*
+    player: Player;
+    target: Server;
+    */
+   
+    ns: NS;
+
+    constructor(ns: NS, targetName: string)  {
+        super(ns);
+        this.targetName = targetName;
         this.commands = [];
+        this.ns = ns;
     }
 
     get runTime() {
         // weaken is always first, so the total delay is the last command's delay added plus weaken time
-        return this.metadata.weakenTime + this.commands[this.commands.length - 1].delay; 
+        return 0;
     }
 
     addCommand(type: CommandType) {
+        switch(type) {
+            case CommandType.GROW: 
+                this.addGrowCommand();
+                break;
+            case CommandType.HACK:
+                this.addHackCommand();
+                break;
+            case CommandType.WEAKEN:
+                this.addWeakenCommand();
+                break;
+        }
+    }
+    private addWeakenCommand() {
+        this.log(`Adding Weaken command.`);
+        const weakenTime = this.ns.getWeakenTime(this.targetName);
+        const weakenAmount = 0.05; // constant per thread
+        const currentSecurity = this.ns.getServerSecurityLevel(this.targetName);
+        
+        const weakenThreads = currentSecurity / weakenAmount;
+        const weakenEstimate = this.ns.weakenAnalyze(weakenThreads);
+        
+        const dontSkip = this.commands.length == 0;
+
+        const difference = currentSecurity - weakenEstimate;
+
+        // TODO: need to figure this part out, weaken doesn't skip being added when it should
+
+        if (difference < 5 && difference > 0 || (difference == 0 && dontSkip)) {
+            this.log(`Weaken Estimate looks good: Current: ${currentSecurity} Minimum: ${this.ns.getServerMinSecurityLevel(this.targetName)} Estimate: ${weakenEstimate} Difference: ${difference}.`)
+            this.commands.push({
+                duration: weakenTime,
+                target: this.targetName,
+                threads: Math.ceil(weakenThreads),
+                type: CommandType.WEAKEN
+            })
+        } else {
+            this.log(`Weaken not needed. Current Security: ${currentSecurity} Minimum Security: ${this.ns.getServerMinSecurityLevel(this.targetName)} Difference: ${difference}.`);
+        }
+// from https://darktechnomancer.github.io/ 
+// By passing the time it’s expected to end, and how long it’s meant to run as arguments, you can have it calculate its own delay at no additional RAM cost.
+// 
+// maybe don't pass delay but change it to end time? 
+/* 
+    Goals for batch execution: 
+    1) Tighten the gap between tasks to only 5ms. 
+    2) Start a new batch within 5ms of the previous one 
+    3) Have your tasks ending within 1-2ms of when they are supposed to. 
+    4) Automatically recalculate threads and timing after a level up.
+*/
+        
+    }
+
+    private addGrowCommand() {
+        this.log(`Adding Grow command.`);
+        let growTime = this.ns.getGrowTime(this.targetName);
+        
+        // with formulas, should be able to predict this from zero security instead of current
+        let multiplier = this.ns.getServerMaxMoney(this.targetName) / this.ns.getServerMoneyAvailable(this.targetName);
+        let growThreads = 1;
+
+        try {
+            growThreads = this.ns.growthAnalyze(this.targetName, multiplier);
+        } catch {}
+
+        let repeatCount = growThreads / 2000;
+
+        if (growThreads > 0 && repeatCount > 0) {
+            for (let i = 0; i < repeatCount; i++) {
+                this.commands.push({
+                    duration: growTime,
+                    target: this.targetName,
+                    threads: Math.ceil(growThreads / repeatCount),
+                    type: CommandType.GROW
+                })
+            }
+        } else {
+            this.log(`Skipping Grow on ${this.targetName} as it needs ${growThreads.toPrecision(3)} threads.`);
+        }
+    }
+
+    private addHackCommand() {
+        this.log(`Adding Hack command.`);
+        let hackTime = this.ns.getHackTime(this.targetName);
+
+        let desiredAmount = this.ns.getServerMaxMoney(this.targetName) / 2;
+        let hackThreads = this.ns.hackAnalyzeThreads(this.targetName, desiredAmount);
+
+        if (hackThreads < 1) {
+            hackThreads = 1; // fall back
+        }
+
         this.commands.push({
-            type: type,
-            target: this.metadata.target,
-            threads: this.getThreadsFromMetadataByType(type),
-            delay: this.commandBuffer * this.commands.length + this.getMinDelaysFromMetadataByType(type)
-        });
-    }
-
-    
-    toJson() {
-        return JSON.stringify({
-            commands: [...this.commands.entries()],
-            metadata: JSON.stringify(this.metadata)
-        });
-    }
-
-    private getThreadsFromMetadataByType(commandType: CommandType) {
-        switch (commandType) {
-            case CommandType.WEAKEN:
-                return this.metadata.weakenThreads;
-            case CommandType.GROW:
-                return this.metadata.growThreads;
-            case CommandType.HACK:
-                return this.metadata.hackThreads;
-        }   
-    }
-
-    private getMinDelaysFromMetadataByType(commandType: CommandType) {
-        switch (commandType) {
-            case CommandType.WEAKEN:
-                return this.metadata.minWeakenDelay;
-            case CommandType.GROW:
-                return this.metadata.minGrowDelay;
-            case CommandType.HACK:
-                return this.metadata.minHackDelay;
-        }   
+            duration: hackTime,
+            target: this.targetName,
+            threads: Math.trunc(hackThreads),
+            type: CommandType.HACK
+        }) 
     }
 }
 
@@ -174,7 +172,9 @@ export interface Command {
     type: CommandType,
     target: string,
     threads: number,
-    delay: number,
+    duration: number,
+    delay?: number,
+    executor?: string
 }
 
 export enum CommandType {

@@ -1,13 +1,14 @@
 import { NS } from '../NetscriptDefinitions'
-import { PortLog } from 'log/portLog';
+import { Logger } from '/log/logger';
 
 export async function main(ns: NS) {
     const targetHost = ns.args[0] as string;
     const delay = ns.args[1] as number
-    let pLog: PortLog = new PortLog(ns);
+    let pLog: Logger = new Logger(ns);
 
-    await ns.sleep(delay); 
-    let reducedAmount = await ns.weaken(targetHost);
+    pLog.log(`INFO: Running weaken on ${targetHost} in ${delay}ms`);
+
+    let reducedAmount = await ns.weaken(targetHost, {additionalMsec: delay});
 
     pLog.log(`INFO: -${reducedAmount} security from weaken on ${targetHost}`);
 }

@@ -4,14 +4,13 @@ import { BasicServer } from 'model/basicServer';
 import { PwndServer } from 'model/pwndServer';
 import { Batcher, CommandType } from 'fractal/batcher';
 import { Dispatcher } from 'fractal/dispatcher';
-import { PortLog } from '/log/portLog';
+import { Logger } from 'log/logger';
 
 export async function main(ns: NS) {
     ns.run(`log/startNetLogger.js`);
 
-    let logger: PortLog = new PortLog(ns);
+    let logger: Logger = new Logger(ns);
 
-    ns.tail();
     let basicServers: BasicServer[] = Array.from(ConnectedServerList(ns)).map(c => new BasicServer(ns, c));
     let pwndServers: PwndServer[] = pwnServers(ns, basicServers);
     pwndServers.forEach(s => {
@@ -22,23 +21,35 @@ export async function main(ns: NS) {
     })
     let target = pwndServers.filter(p => p.hostname == `foodnstuff`)[0];
     let batcher = new Batcher(ns);
-    let batch = batcher.createPreparationBatch(target.hostname);
+    let batch = await batcher.createPreparationBatch(target.hostname);
     let dispatcher = new Dispatcher(ns);
 
-    let dispatchResult = dispatcher.tryDispatch(pwndServers, batch);
-    logger.log(`Dispatch Result for prep: ${dispatchResult}`);
-
     
+    let targetPrimed = false;
+    while (!targetPrimed) {
+        logger.log(`Publishing priming batch for ${target.hostname}`);
+        await dispatcher.tryDispatch(pwndServers, batch);
+        while (dispatcher.isBatchRunning(batch))
+            await ns.sleep(1000);
 
-    logger.log(`waiting a second before dispatching hack batch`);
-    
-    
-    await ns.sleep(1000);
-    let hackBatch = batcher.createHackingBatch(target.hostname);
-    let hackResult = dispatcher.tryDispatch(pwndServers, hackBatch);
-    logger.log(`Hack Batch Dispatched: ${hackResult}`);
+        if (ns.getServerMoneyAvailable(target.hostname) > ns.getServerMaxMoney(target.hostname) - 1000 /* arbitrary value for balancing */) {
+            targetPrimed = true;
+        } else {
+            logger.log(`Failed to prime ${target.hostname}. Retrying`);
+            await ns.sleep(1000);
+        }
+    }
 
 
+    let batchesDispatched = 0;
+    while (true) {
+        logger.log(`Creating hack batch...`);
+        let hackBatch = await batcher.createHackingBatch(target.hostname);
+        batchesDispatched++;
+        await dispatcher.tryDispatch(pwndServers, hackBatch);
+        logger.log(`Hack Batch #${batchesDispatched + 1} Dispatched.`);
+        await ns.sleep(10000);
+    }
 }
 
 function pwnServers(ns: NS, basicServers: BasicServer[]) {

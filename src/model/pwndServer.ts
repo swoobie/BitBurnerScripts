@@ -27,12 +27,6 @@ export class PwndServer extends BasicServer {
 
     get deployedScripts () { return this.localScripts }
 
-    canRunScriptCount(scriptName: string, threads: number) {
-        let requiredRam = this.ns.getScriptRam(scriptName, this.hostname) * threads;
-
-        return requiredRam < this.freeRam();
-    }
-
     runScript(scriptName: string, threads: number, args?: string[]) {
         this.ns.exec(scriptName, this.hostname, threads, ...(args ?? []))
     }
