@@ -106,16 +106,15 @@ export class Dispatcher extends Logger {
     isBatchRunning(batch: Batch) {
         if (batch.commands.length == 0) return false;
 
-        let isRunning = false;
-
+        let running = false;
         batch.commands.forEach(c => {
             let script = Dispatcher.getScriptForCommandType(c.type);
-            if (c.executor != undefined) {
-                isRunning = isRunning || this.ns.scriptRunning(script, c.executor!);
+            if (c.executor != undefined && this.ns.scriptRunning(script, c.executor!)) {
+                running = true;
             }
         })
 
-        return isRunning;
+        return running;
     }
 
     public static getScriptForCommandType(commandType: CommandType) {

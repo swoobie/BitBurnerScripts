@@ -3,10 +3,10 @@ import { Logger } from '/log/logger'
 
 export async function main(ns: NS) {
 
-    // kill any other instances of this script running locally
-    ns.ps()
+    if (ns.ps()
         .filter( pi => pi.filename == ns.getScriptName() && pi.pid != ns.pid)
-        .forEach(p => ns.kill(p.pid));
+        .length != 0)
+        ns.exit();
 
     let portLog: Logger = new Logger(ns);
     portLog.clear();

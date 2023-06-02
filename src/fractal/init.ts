@@ -9,6 +9,9 @@ import { Logger } from 'log/logger';
 export async function main(ns: NS) {
     ns.run(`log/startNetLogger.js`);
 
+    let argsTarget: string = ns.args[0] as string;
+    ns.disableLog('sleep');
+
     let logger: Logger = new Logger(ns);
 
     let basicServers: BasicServer[] = Array.from(ConnectedServerList(ns)).map(c => new BasicServer(ns, c));
@@ -19,7 +22,7 @@ export async function main(ns: NS) {
         s.deploy(Dispatcher.getScriptForCommandType(CommandType.WEAKEN), `home`);
         s.deploy(`log/portLog.js`, `home`);
     })
-    let target = pwndServers.filter(p => p.hostname == `foodnstuff`)[0];
+    let target = pwndServers.filter(p => p.hostname == (argsTarget == undefined ? `foodnstuff`: argsTarget))[0];
     let batcher = new Batcher(ns);
     let batch = await batcher.createPreparationBatch(target.hostname);
     let dispatcher = new Dispatcher(ns);
@@ -29,8 +32,9 @@ export async function main(ns: NS) {
     while (!targetPrimed) {
         logger.log(`Publishing priming batch for ${target.hostname}`);
         await dispatcher.tryDispatch(pwndServers, batch);
-        while (dispatcher.isBatchRunning(batch))
+        while (dispatcher.isBatchRunning(batch)) {
             await ns.sleep(1000);
+        }
 
         if (ns.getServerMoneyAvailable(target.hostname) > ns.getServerMaxMoney(target.hostname) - 1000 /* arbitrary value for balancing */) {
             targetPrimed = true;
