@@ -31,6 +31,7 @@ function upgradeNode(ns: NS, moneyLimit: number): number {
     const numNodes = ns.hacknet.numNodes();
     let upgradeTargetIndex = 0;
 
+    if (numNodes == 0) return 0;
 
     // loop through and take the lowest sum of stats as the target to increase
     for (let i = 0; i < numNodes; i++) {

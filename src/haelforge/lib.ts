@@ -67,7 +67,7 @@ export function basicEco(ns: NS, servers: BasicServer[]) {
         const canAfford = playerMoney / 10 > ns.getPurchasedServerCost(8);
         const result = canAfford ? ns.purchaseServer(`haelforge-${myServers.length + 1}`, 8) : '';
         if (result !== '') {
-            ns.print(`Bought a server: ${result}`);
+            ns.print(`\u001b[35;1mEco> Bought a server: ${result}\u001b[0m`);
         }
     } else {
         let totalCost = 0;
@@ -85,7 +85,7 @@ export function basicEco(ns: NS, servers: BasicServer[]) {
         })
 
         if (totalUpgrades > 0) {
-            ns.print(`Upgraded ${totalUpgrades} hosts for $${ns.formatNumber(totalCost, 2)}`);
+            ns.print(`\u001b[35;1mEco> Upgraded ${totalUpgrades} server${totalUpgrades > 1 ? 's' : ''} for $${ns.formatNumber(totalCost, 2)}\u001b[0m`);
         }
     }
 }
