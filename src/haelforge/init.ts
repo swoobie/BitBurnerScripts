@@ -47,6 +47,9 @@ export async function main(ns: NS) {
 
         // find a target
         const target = pwndServers.filter(p => p.hostname == argsTarget)[0];
+        hackTime = ns.getHackTime(target.hostname);
+        growTime = hackTime * 3.2; // constants used by the game
+        weakenTime = hackTime * 4;
 
         /* stuff to run in stages */
         switch (currentStage as Stage) {
@@ -61,10 +64,6 @@ export async function main(ns: NS) {
                     if (!targetPrimed) {
                         targetPrimed = await primeTarget(ns, target);
 
-                        hackTime = ns.getHackTime(target.hostname);
-                        growTime = hackTime * 3.2; // constants used by the game
-                        weakenTime = hackTime * 4;
-
                         growThreads = Math.max(100, Math.ceil(ns.growthAnalyze(target.hostname, target.raw.moneyMax! * 2) / 2));
                         growSecurityAmount = ns.growthAnalyzeSecurity(growThreads, target.hostname);
                         hackThreads = Math.max(1, Math.ceil(ns.hackAnalyzeThreads(target.hostname, target.raw.moneyAvailable! / 2)));
@@ -73,33 +72,19 @@ export async function main(ns: NS) {
                         // weaken would be how much we grow security from hack and grow
                         weakenThreads = Math.max(1, Math.ceil((ns.getServerSecurityLevel(target.hostname) + hackSecurityAmount - ns.getServerMinSecurityLevel(target.hostname)) / 0.05));
                         weakenGrowThreads = Math.ceil((ns.getServerSecurityLevel(target.hostname) + growSecurityAmount - ns.getServerMinSecurityLevel(target.hostname)) / 0.05 )
-
                     } else {
-
                         const cyan = "\u001b[36m";
                         const reset = "\u001b[0m";
-                        ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken ${reset}`);
 
-                        const fleet = getPurchasedBasicServers(ns, basicServers).map(s => s.hostname);
-                        fleet.push('home');
                         const offset = 10; // delay in ms between commands
-                        
-                        let instances = 0;
+                        // need to refactor this part to use the fleet runner func
+                        const executionTime = Date.now() + 500;
+                        executeOnRunners(ns, `haelforge/deploy/hack.js`, hackThreads, [target.hostname,         weakenTime - hackTime + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenThreads, [target.hostname,     weakenTime + offset + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/grow.js`, growThreads, [target.hostname,         weakenTime - growTime + offset * 2 + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenGrowThreads, [target.hostname, weakenTime + offset * 3 + executionTime])
 
-                        while (queueTime < weakenTime) {
-
-                            for (let i = 0; i < fleet.length - 3 && queueTime < weakenTime; i++) {
-                                // ns.print(`Running batch #${instances + 1} on ${fleet[i].hostname}.`)
-                                ns.exec(`haelforge/deploy/hack.js`, fleet[i + 3], hackThreads, target.hostname          , weakenTime - hackTime     + offset * 1 * instances)
-                                ns.exec(`haelforge/deploy/weaken.js`, fleet[i], weakenThreads, target.hostname          , weakenTime - weakenTime   + offset * 2 * instances)
-                                ns.exec(`haelforge/deploy/grow.js`, fleet[i + 1], growThreads, target.hostname          , weakenTime - growTime     + offset * 3 * instances)
-                                ns.exec(`haelforge/deploy/weaken.js`, fleet[i + 2], weakenGrowThreads, target.hostname  , weakenTime - weakenTime   + offset * 4 * instances)
-                                instances++;
-                                queueTime += offset * 4;
-                            }
-                            
-                        }
-
+                        ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken. ETA: ${ns.formatNumber((weakenTime + offset * 3) / 1000, 0, 1000, true)} seconds.${reset}`);
                     }
                 } catch {
                     ns.print(`Encountered an issue, might have run out of money or something. Re-priming.`)
@@ -118,13 +103,8 @@ export async function main(ns: NS) {
             break;
         }
 
-
-
-
-
         i++;
         await ns.sleep(1000);
-        queueTime -= 1000;
         if (i != i) {
             currentStage = Stage.TERMINATE;
         }
@@ -148,46 +128,48 @@ async function primeTarget(ns: NS, target: PwndServer) {
 
     if (target.shouldBeWeakened()) {
         const totalWeakenThreads = Math.ceil((ns.getServerSecurityLevel(target.hostname) - ns.getServerMinSecurityLevel(target.hostname)) / 0.05)
-        let assignedThreads = 0;
-
-        runners.forEach(r => {
-            if (totalWeakenThreads - assignedThreads > 0) {
-                const availWeakenThreads = availableThreadCounts(ns, r).get('haelforge/deploy/weaken.js') ?? 0;
-            
-                const runnerThreads = Math.min(totalWeakenThreads - assignedThreads, availWeakenThreads)
-                assignedThreads += runnerThreads;
-
-                if (runnerThreads > 0) {
-                    ns.exec('haelforge/deploy/weaken.js', r.hostname, runnerThreads, target.hostname, 0);
-                    ns.print(`Weakening ${target.hostname} with ${runnerThreads}/${totalWeakenThreads} threads on ${r.hostname}. T-${(weakenTime / 1000).toFixed(2)}s.`);
-                }
-            }
-        })
+        executeOnRunners(ns, 'haelforge/deploy/weaken.js', totalWeakenThreads, [target.hostname, Date.now() + 1000]);
+        ns.print(`Weakening. T-${(weakenTime / 1000).toFixed(2)}s`)
         await ns.sleep(weakenTime);
     } else if (target.shouldBeGrown()) {
         const totalGrowThreads = Math.ceil(ns.growthAnalyze(target.hostname, ns.getServerMaxMoney(target.hostname) / ns.getServerMoneyAvailable(target.hostname)));
-        
-        let assignedThreads = 0;
-
-        runners.forEach(r => {
-            if (totalGrowThreads - assignedThreads > 0) {
-                const availGrowThreads = availableThreadCounts(ns, r).get('haelforge/deploy/grow.js') ?? 0;
-            
-                const runnerThreads = Math.min(totalGrowThreads - assignedThreads, availGrowThreads)
-                assignedThreads += runnerThreads;
-
-                if (runnerThreads > 0) {
-                    ns.exec('haelforge/deploy/grow.js', r.hostname, runnerThreads, target.hostname, 0);
-                    ns.print(`Growing ${target.hostname} with ${runnerThreads}/${totalGrowThreads} threads on ${r.hostname}. T-${(growTime / 1000).toFixed(2)}s.`);
-                }
-            }
-        })
-
-
+        executeOnRunners(ns, 'haelforge/deploy/grow.js', totalGrowThreads, [target.hostname, Date.now() + 1000]);
+        ns.print(`Growing. T-${(growTime / 1000).toFixed(2)}s`)
         await ns.sleep(growTime);
-
+        const totalWeakenThreads = Math.ceil((ns.getServerSecurityLevel(target.hostname) - ns.getServerMinSecurityLevel(target.hostname)) / 0.05)
+        executeOnRunners(ns, 'haelforge/deploy/weaken.js', totalWeakenThreads, [target.hostname, Date.now() + 1000]);
+        ns.print(`Weakening. T-${(weakenTime / 1000).toFixed(2)}s`)
+        await ns.sleep(weakenTime);
     }
+    
+    // shrug, we added an extra second to the priming runs so why not
+    await ns.sleep(1000);
+
     const result = !target.shouldBeWeakened() && !target.shouldBeGrown()
     ns.print(`Priming ${result ? 'Successful': `Failed`}. Weakened: ${!target.shouldBeWeakened()} Grown: ${!target.shouldBeGrown()}`);
     return result;
+}
+
+function executeOnRunners(ns: NS, script: string, threads: number, args: (string | number)[]) {
+    const runners = ns.getPurchasedServers().map(hostname => new PwndServer(ns, hostname));
+    runners.push(new PwndServer(ns, 'home')); // include home for when we don't have a fleet
+
+    let assignedThreads = 0;
+
+    runners.forEach(r => {
+        if (threads - assignedThreads > 0) {
+            const availWeakenThreads = availableThreadCounts(ns, r).get('haelforge/deploy/weaken.js') ?? 0;
+        
+            const runnerThreads = Math.min(threads - assignedThreads, availWeakenThreads)
+            assignedThreads += runnerThreads;
+
+            if (runnerThreads > 0) {
+                ns.exec(script, r.hostname, runnerThreads, ...args);
+                
+            }
+        }
+    })
+
+    
+    ns.print(`Running '${script}' with ${assignedThreads}/${threads} threads. Args: ${JSON.stringify(args)}`);
 }
