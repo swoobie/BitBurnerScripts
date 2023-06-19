@@ -50,7 +50,7 @@ export function breachTargetBasicServer(ns: NS, target: BasicServer) {
 export function copyDeployScriptsToPwndServer(ns: NS, target: PwndServer) {
     const files = ns.ls(ns.getHostname(), `haelforge/deploy/`);
     files.forEach(f => {
-        // ns.print(`Deploying '${f}' on '${target.hostname}`);
+        //ns.print(`Deploying '${f}' on '${target.hostname}`);
         target.deploy(f, `home`);
     });
 }
@@ -60,10 +60,12 @@ export function formulasAvailable(ns: NS) {
 }
 
 export function basicEco(ns: NS, servers: BasicServer[]) {
-    const myServers = servers.filter(s => ns.getPurchasedServers().findIndex(val => val == s.hostname) != -1)
+    const myServers = getPurchasedBasicServers(ns, servers);
 
     if (myServers.length < ns.getPurchasedServerLimit()) {
-        const result = ns.purchaseServer(`haelforge-${myServers.length + 1}`, 16);
+        const playerMoney = ns.getPlayer().money;
+        const canAfford = playerMoney / 10 > ns.getPurchasedServerCost(8);
+        const result = canAfford ? ns.purchaseServer(`haelforge-${myServers.length + 1}`, 8) : '';
         if (result !== '') {
             ns.print(`Bought a server: ${result}`);
         }
@@ -83,7 +85,22 @@ export function basicEco(ns: NS, servers: BasicServer[]) {
         })
 
         if (totalUpgrades > 0) {
-            ns.print(`Upgraded ${totalUpgrades} hosts for $${totalCost}`);
+            ns.print(`Upgraded ${totalUpgrades} hosts for $${ns.formatNumber(totalCost, 2)}`);
         }
     }
+}
+
+export function availableThreadCounts(ns: NS, server: BasicServer): Map<string, number> {
+    const files = ns.ls(ns.getHostname(), `haelforge/deploy/`);
+    const map = new Map();
+    files.forEach(f => map.set(f, Math.floor(server.freeRam() / ns.getScriptRam(f, server.hostname))))
+    return map;
+}
+
+export function getPurchasedBasicServers(ns: NS, servers: BasicServer[]): BasicServer[] {
+    return servers.filter(s => ns.getPurchasedServers().findIndex(val => val == s.hostname) != -1);
+}
+
+export function getPurchasedPwndServers(ns: NS, servers: PwndServer[]): PwndServer[] {
+    return servers.filter(s => ns.getPurchasedServers().findIndex(val => val == s.hostname) != -1);
 }

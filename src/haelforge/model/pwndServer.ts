@@ -25,19 +25,26 @@ export class PwndServer extends BasicServer {
 
     get deployedScripts () { return this.localScripts }
 
+    get raw () { return this.ns.getServer(this.hostname) }
+
     runScript(scriptName: string, threads: number, args?: string[]) {
         this.ns.exec(scriptName, this.hostname, threads, ...(args ?? []))
     }
 
+    shouldBeWeakened(): boolean {
+        return (this.ns.getServerSecurityLevel(this.hostname) - this.ns.getServerMinSecurityLevel(this.hostname)) >=  5;
+    }
+
+    shouldBeGrown() {
+        return this.ns.getServerMoneyAvailable(this.hostname) / this.ns.getServerMaxMoney(this.hostname) < 0.90
+    }
+
     killDeployedScripts() {
         let running: ProcessInfo[] = this.ns.ps(this.hostname);
-        this.ns.print(`${running.length} processes on ${this.hostname}`);
         running.filter(p => {
             this.localScripts.includes(p.filename)
         }).map(p => {
             let result = this.ns.kill(p.filename, this.hostname);
-            
-            this.ns.print(`${result ? `SUCCESS: Killed` : `WARN: Failed to kill`} script ${p.filename} on ${this.hostname}`);
         });
     }
 }
