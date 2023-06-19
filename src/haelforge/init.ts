@@ -21,6 +21,13 @@ export async function main(ns: NS) {
 
     let hackTime = 0, growTime = 0, weakenTime = 0, growThreads = 0, growSecurityAmount = 0, hackThreads = 0, hackSecurityAmount = 0, weakenThreads = 0, weakenGrowThreads = 0;
 
+    let previousMoney = ns.getPlayer().money;
+    let previousTime = Date.now();
+
+    /* can bypass the ram check for document with this */
+    // const doc: Document = eval('document');
+    // TODO: Custom window stuff
+
     do {
         ns.print(`Haelforge Run ${i+1}: Stage ${currentStage}`);
 
@@ -35,15 +42,20 @@ export async function main(ns: NS) {
         basicEco(ns, basicServers);
 
         // Hacknet
-        // Increase the money limit every factor of 10 our money gets to from when the script started.
-        // Alternatively, reduce it if we ever run lower on money than the current limit.
-        if (ns.getPlayer().money > hacknetMoneyLimit * 100 || ns.getPlayer().money < hacknetMoneyLimit) {
-            let prev = hacknetMoneyLimit;
-            hacknetMoneyLimit = ns.getPlayer().money / 10;
-            ns.print(`\u001b[35mHacknet> Adjusting max spending limit. Previous: $${ns.formatNumber(prev, 0)}. New Limit: $${ns.formatNumber(hacknetMoneyLimit, 0)}.\u001b[0m`);
+        const moneyDifference = ns.getPlayer().money - previousMoney
+        if ( moneyDifference > hacknetMoneyLimit) {
+            previousMoney = ns.getPlayer().money;
+
+            const spentHacknetMoney = upgradeHacknet(ns, hacknetMoneyLimit, 21);
+            ns.print(`\u001b[35mHacknet> Upgrade Spending: $${ns.formatNumber(spentHacknetMoney, 0)} of $${ns.formatNumber(hacknetMoneyLimit, 0)} spent.\u001b[0m`);
+            
+            // if we're more than 10 times over the limit, update it again
+            if (moneyDifference > hacknetMoneyLimit * 10) {
+                let prev = hacknetMoneyLimit;
+                hacknetMoneyLimit = ns.getPlayer().money / 10;
+                ns.print(`\u001b[35mHacknet> Adjusting max spending limit. Previous: $${ns.formatNumber(prev, 0)}. New Limit: $${ns.formatNumber(hacknetMoneyLimit, 0)}.\u001b[0m`);
+            }
         }
-        const spentHacknetMoney = upgradeHacknet(ns, hacknetMoneyLimit, 21);
-        ns.print(`\u001b[35mHacknet> Upgrade Spending: $${ns.formatNumber(spentHacknetMoney, 0)} of $${ns.formatNumber(hacknetMoneyLimit, 0)} spent.\u001b[0m`);
 
         // find a target
         const target = pwndServers.filter(p => p.hostname == argsTarget)[0];
@@ -70,21 +82,27 @@ export async function main(ns: NS) {
                         hackSecurityAmount = ns.hackAnalyzeSecurity(hackThreads, target.hostname);
 
                         // weaken would be how much we grow security from hack and grow
-                        weakenThreads = Math.max(1, Math.ceil((ns.getServerSecurityLevel(target.hostname) + hackSecurityAmount - ns.getServerMinSecurityLevel(target.hostname)) / 0.05));
-                        weakenGrowThreads = Math.ceil((ns.getServerSecurityLevel(target.hostname) + growSecurityAmount - ns.getServerMinSecurityLevel(target.hostname)) / 0.05 )
+                        const securityGap = (ns.getServerSecurityLevel(target.hostname) - ns.getServerMinSecurityLevel(target.hostname));
+                        weakenThreads = Math.max(1, Math.ceil((securityGap + hackSecurityAmount)) / 0.05);
+                        weakenGrowThreads = Math.ceil((securityGap + growSecurityAmount) / 0.05 );
                     } else {
                         const cyan = "\u001b[36m";
                         const reset = "\u001b[0m";
 
-                        const offset = 10; // delay in ms between commands
+                        const offset = 5; // delay in ms between commands
                         // need to refactor this part to use the fleet runner func
-                        const executionTime = Date.now() + 500;
-                        executeOnRunners(ns, `haelforge/deploy/hack.js`, hackThreads, [target.hostname,         weakenTime - hackTime + executionTime])
-                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenThreads, [target.hostname,     weakenTime + offset + executionTime])
-                        executeOnRunners(ns, `haelforge/deploy/grow.js`, growThreads, [target.hostname,         weakenTime - growTime + offset * 2 + executionTime])
-                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenGrowThreads, [target.hostname, weakenTime + offset * 3 + executionTime])
+                        const now = Date.now();
+                        const executionTime = now + 500;
 
-                        ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken. ETA: ${ns.formatNumber((weakenTime + offset * 3) / 1000, 0, 1000, true)} seconds.${reset}`);
+                        // send out a batch after enough time has passed for the offset of all commands
+                        if (now - previousTime >= offset * 4 /* 4 commands total */) {
+                            previousTime = now;
+                            executeOnRunners(ns, `haelforge/deploy/hack.js`, hackThreads, [target.hostname,         weakenTime - hackTime + executionTime])
+                            executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenThreads, [target.hostname,     weakenTime + offset + executionTime])
+                            executeOnRunners(ns, `haelforge/deploy/grow.js`, growThreads, [target.hostname,         weakenTime - growTime + offset * 2 + executionTime])
+                            executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenGrowThreads, [target.hostname, weakenTime + offset * 3 + executionTime])
+                            ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken. ETA: ${ns.formatNumber((weakenTime + offset * 3) / 1000, 0, 1000, true)} seconds.${reset}`);
+                        }
                     }
                 } catch {
                     ns.print(`Encountered an issue, might have run out of money or something. Re-priming.`)
@@ -104,8 +122,9 @@ export async function main(ns: NS) {
         }
 
         i++;
-        await ns.sleep(1000);
+        await ns.sleep(20); // While loop go BRRRRRRRRRRRRRRRRRRR
         if (i != i) {
+            // TODO: figure out better stop condition
             currentStage = Stage.TERMINATE;
         }
 
@@ -114,7 +133,7 @@ export async function main(ns: NS) {
         // run the batch on the runners
         // keep track of which targets have active batches and their end times
         // maybe a list of end times per host, similar to what's in script batch
-    } while (currentStage != Stage.TERMINATE); // TODO: figure out how long to repeat this for at some point
+    } while (currentStage != Stage.TERMINATE);
     
 }
 
