@@ -1,15 +1,17 @@
 import { NS } from '../../NetscriptDefinitions'
 import { BasicServer } from 'haelforge/model/basicServer';
 import { PwndServer } from 'haelforge/model/pwndServer';
-import { availableThreadCounts, basicEco, breachBasicServerList, copyDeployScriptsToPwndServer, formulasAvailable, getConnectedServers, getPurchasedBasicServers, getPurchasedPwndServers } from 'haelforge/lib';
+import { availableThreadCounts, basicEco, breachBasicServerList, copyDeployScriptsToPwndServer, formulasAvailable, getConnectedServers, getPurchasedPwndServers, Colors } from 'haelforge/lib';
 import { Stage } from 'haelforge/model/stage';
-import { upgradeHacknet } from 'haelforge/hacknet';
+import { HacknetBot } from 'haelforge/hacknet';
 
 export async function main(ns: NS) {
     const argsTarget: string = ns.args[0] as string ?? "n00dles";
     const canUseFormulas: boolean = formulasAvailable(ns);
     let currentStage: Stage = Stage.INITIALIZE;
     let sleepTime = 100;
+
+    const hacknet = new HacknetBot();
 
     ns.disableLog('ALL');
     ns.tail();
@@ -21,13 +23,15 @@ export async function main(ns: NS) {
 
     let hackTime = 0, growTime = 0, weakenTime = 0, growThreads = 0, growSecurityAmount = 0, hackThreads = 0, hackSecurityAmount = 0, weakenThreads = 0, weakenGrowThreads = 0;
 
-    let previousMoney = ns.getPlayer().money;
+    let previousMoney = 1000;
     let previousTime = Date.now();
 
     /* can bypass the ram check for document with this */
     // const doc: Document = eval('document');
     // TODO: Custom window stuff
-    let prevStage: Stage = currentStage;
+    let prevStage: Stage = Stage.TERMINATE;
+    ns.print('Starting the Haelforge.');
+    
     do {
         if (currentStage != prevStage) {
             const cyan = "\u001b[36m";
@@ -47,19 +51,9 @@ export async function main(ns: NS) {
         basicEco(ns, basicServers);
 
         // Hacknet
-        const moneyDifference = ns.getPlayer().money - previousMoney
-        if ( moneyDifference > hacknetMoneyLimit) {
-            previousMoney = ns.getPlayer().money;
-
-            const spentHacknetMoney = upgradeHacknet(ns, hacknetMoneyLimit, 21);
-            ns.print(`\u001b[35mHacknet> Upgrade Spending: $${ns.formatNumber(spentHacknetMoney, 0)} of $${ns.formatNumber(hacknetMoneyLimit, 0)} spent.\u001b[0m`);
-            
-            // if we're more than 10 times over the limit, update it again
-            if (moneyDifference > hacknetMoneyLimit * 10) {
-                let prev = hacknetMoneyLimit;
-                hacknetMoneyLimit = ns.getPlayer().money / 10;
-                ns.print(`\u001b[35mHacknet> Adjusting max spending limit. Previous: $${ns.formatNumber(prev, 0)}. New Limit: $${ns.formatNumber(hacknetMoneyLimit, 0)}.\u001b[0m`);
-            }
+        const spentHacknetMoney = hacknet.upgradeHacknet(ns);
+        if ( spentHacknetMoney > 0) {     
+            ns.print(`${Colors.magenta}Hacknet> Upgrade Expense: $${ns.formatNumber(spentHacknetMoney, 0)}${Colors.reset}`);
         }
 
         // find a target
@@ -71,46 +65,51 @@ export async function main(ns: NS) {
         /* stuff to run in stages */
         switch (currentStage as Stage) {
             case Stage.INITIALIZE:
-                currentStage = formulasAvailable(ns) ? Stage.POST_FORMULAS : Stage.PRE_FORMULAS;
+                ns.print(`${Colors.brightGreen}Initializing...${Colors.reset}`);
+                currentStage = formulasAvailable(ns) ? Stage.POST_FORMULAS : Stage.PRIMING;
 
-                getPurchasedPwndServers(ns, pwndServers).forEach(s => s.killDeployedScripts());
+                getPurchasedPwndServers(ns, pwndServers).forEach(s => s.killDeployedScripts())
+                ns.print(`${Colors.brightGreen}Initialized!${Colors.reset}`);
             break;
+            case Stage.PRIMING:
+                if (!targetPrimed) {
+                    targetPrimed = await primeTarget(ns, target);
+
+                    growThreads = Math.max(100, Math.ceil(ns.growthAnalyze(target.hostname, target.raw.moneyMax! * 2) / 2));
+                    growSecurityAmount = ns.growthAnalyzeSecurity(growThreads, target.hostname);
+                    hackThreads = Math.max(1, Math.ceil(ns.hackAnalyzeThreads(target.hostname, target.raw.moneyAvailable! / 2)));
+                    hackSecurityAmount = ns.hackAnalyzeSecurity(hackThreads, target.hostname);
+
+                    // weaken would be how much we grow security from hack and grow
+                    const securityGap = (ns.getServerSecurityLevel(target.hostname) - ns.getServerMinSecurityLevel(target.hostname));
+                    weakenThreads = Math.max(1, Math.ceil((securityGap + hackSecurityAmount)) / 0.05);
+                    weakenGrowThreads = Math.ceil((securityGap + growSecurityAmount) / 0.05 );
+                } else {
+                    currentStage = Stage.PRE_FORMULAS; 
+                }
+                break;
             case Stage.PRE_FORMULAS:
                 // goal is to get to formulas asap
                 try {
-                    if (!targetPrimed) {
-                        targetPrimed = await primeTarget(ns, target);
+                    const offset = 5; // delay in ms between commands
+                    // need to refactor this part to use the fleet runner func
+                    const now = Date.now();
+                    const executionTime = now + 500;
 
-                        growThreads = Math.max(100, Math.ceil(ns.growthAnalyze(target.hostname, target.raw.moneyMax! * 2) / 2));
-                        growSecurityAmount = ns.growthAnalyzeSecurity(growThreads, target.hostname);
-                        hackThreads = Math.max(1, Math.ceil(ns.hackAnalyzeThreads(target.hostname, target.raw.moneyAvailable! / 2)));
-                        hackSecurityAmount = ns.hackAnalyzeSecurity(hackThreads, target.hostname);
-
-                        // weaken would be how much we grow security from hack and grow
-                        const securityGap = (ns.getServerSecurityLevel(target.hostname) - ns.getServerMinSecurityLevel(target.hostname));
-                        weakenThreads = Math.max(1, Math.ceil((securityGap + hackSecurityAmount)) / 0.05);
-                        weakenGrowThreads = Math.ceil((securityGap + growSecurityAmount) / 0.05 );
-                    } else {
-
-                        const offset = 5; // delay in ms between commands
-                        // need to refactor this part to use the fleet runner func
-                        const now = Date.now();
-                        const executionTime = now + 500;
-
-                        // send out a batch after enough time has passed for the offset of all commands
-                        if (now - previousTime >= offset * 4 /* 4 commands total */) {
-                            previousTime = now;
-                            executeOnRunners(ns, `haelforge/deploy/hack.js`, hackThreads, [target.hostname,         weakenTime - hackTime + executionTime])
-                            executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenThreads, [target.hostname,     weakenTime + offset + executionTime])
-                            executeOnRunners(ns, `haelforge/deploy/grow.js`, growThreads, [target.hostname,         weakenTime - growTime + offset * 2 + executionTime])
-                            executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenGrowThreads, [target.hostname, weakenTime + offset * 3 + executionTime])
-                            
-                            // ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken. ETA: ${ns.formatNumber((weakenTime + offset * 3) / 1000, 0, 1000, true)} seconds.${reset}`);
-                        }
+                    // send out a batch after enough time has passed for the offset of all commands
+                    if (now - previousTime >= offset * 4 /* 4 commands total */) {
+                        previousTime = now;
+                        executeOnRunners(ns, `haelforge/deploy/hack.js`, hackThreads, [target.hostname,         weakenTime - hackTime + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenThreads, [target.hostname,     weakenTime + offset + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/grow.js`, growThreads, [target.hostname,         weakenTime - growTime + offset * 2 + executionTime])
+                        executeOnRunners(ns, `haelforge/deploy/weaken.js`, weakenGrowThreads, [target.hostname, weakenTime + offset * 3 + executionTime])
+                        
+                        // ns.print(`${cyan}Calculated thread counts are: ${hackThreads} Hack, ${growThreads} Grow, ${weakenThreads} Weaken. ETA: ${ns.formatNumber((weakenTime + offset * 3) / 1000, 0, 1000, true)} seconds.${reset}`);
                     }
                 } catch {
                     ns.print(`Encountered an issue, might have run out of money or something. Re-priming.`)
                     targetPrimed = false;
+                    currentStage = Stage.PRIMING;
                 } 
             break;
             case Stage.POST_FORMULAS:
