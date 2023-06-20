@@ -3,7 +3,7 @@ import { BasicServer } from 'haelforge/model/basicServer';
 import { PwndServer } from 'haelforge/model/pwndServer';
 import { availableThreadCounts, basicEco, breachBasicServerList, copyDeployScriptsToPwndServer, formulasAvailable, getConnectedServers, getPurchasedPwndServers, Colors } from 'haelforge/lib';
 import { Stage } from 'haelforge/model/stage';
-import { HacknetBot } from 'haelforge/hacknet';
+import { HacknetBot } from '/haelforge/hacknetBot';
 
 export async function main(ns: NS) {
     const argsTarget: string = ns.args[0] as string ?? "n00dles";
@@ -31,7 +31,7 @@ export async function main(ns: NS) {
     // TODO: Custom window stuff
     let prevStage: Stage = Stage.TERMINATE;
     ns.print('Starting the Haelforge.');
-    
+
     do {
         if (currentStage != prevStage) {
             const cyan = "\u001b[36m";

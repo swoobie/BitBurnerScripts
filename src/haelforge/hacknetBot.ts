@@ -74,25 +74,22 @@ export class HacknetBot {
         if (cheapestCost == levelUpgradeCost) {
             if (this.availableMoney >= levelUpgradeCost && ns.hacknet.upgradeLevel(upgradeTargetIndex, 1)) {
                 this.availableMoney -= levelUpgradeCost;
-                return levelUpgradeCost + this.upgradeNode(ns);
+                return levelUpgradeCost;
             }
-            return 0;
         } else if (cheapestCost == ramUpgradeCost) {
             if (this.availableMoney >= ramUpgradeCost && ns.hacknet.upgradeRam(upgradeTargetIndex, 1)) {
                 this.availableMoney -= ramUpgradeCost;
-                return ramUpgradeCost + this.upgradeNode(ns);
+                return ramUpgradeCost;
             } 
-            return 0;
         } else if (cheapestCost == coreUpgradeCost) {
             if (this.availableMoney >= coreUpgradeCost && ns.hacknet.upgradeCore(upgradeTargetIndex, 1)) {
                 this.availableMoney -= coreUpgradeCost;
-                return coreUpgradeCost + this.upgradeNode(ns);
+                return coreUpgradeCost;
             }
-            return 0;
         } else {
-            ns.print(`ERROR: Couldn't match cheapest cost value: ${cheapestCost}. Level: ${levelUpgradeCost}, Ram: ${ramUpgradeCost}, Core: ${coreUpgradeCost}`);
-            return 0;
+            ns.print(`ERROR: Couldn't match cheapest cost value: ${cheapestCost}. Level: ${levelUpgradeCost}, Ram: ${ramUpgradeCost}, Core: ${coreUpgradeCost}`); 
         }
+        return 0;
     }
 
     sumStats(nodeStats: NodeStats) {
